@@ -5,3 +5,8 @@ st.image
 st.spinner
 st.audio
 st.button
+
+streamlit
+transformers<5.0.0
+torch
+Pillow
