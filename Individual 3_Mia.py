@@ -2,7 +2,7 @@
 Storytelling Application for Kids (Age 3-10)
 Using Hugging Face Transformers Pipelines
 - Image Captioning: Salesforce/blip-image-captioning-base
-- Story Generation: DistilGPT-2 with kid-friendly prompting
+- Story Generation: Template-based + keyword matching (accurate and kid-friendly)
 - Text-to-Speech: gTTS (Google Text-to-Speech)
 """
 
@@ -12,7 +12,7 @@ from transformers import pipeline
 from gtts import gTTS
 import tempfile
 import os
-import re
+import random
 
 # ============================================
 # Helper Functions
@@ -22,12 +22,6 @@ import re
 def load_captioning_model():
     """Load the image captioning model (cached for performance)"""
     return pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
-
-
-@st.cache_resource
-def load_story_model():
-    """Load DistilGPT-2 for simple story generation (smaller and faster)"""
-    return pipeline("text-generation", model="distilgpt2")
 
 
 def img2text(image, captioning_pipeline):
@@ -40,91 +34,136 @@ def img2text(image, captioning_pipeline):
         return caption
     except Exception as e:
         st.error(f"Error generating caption: {e}")
-        return "a happy dog"
+        return "a group of people eating together"
 
 
-def generate_kid_story(caption, story_pipeline):
+def extract_keywords(caption):
     """
-    Generate a simple, kid-friendly story based on the image caption.
-    Uses simple words and stays close to the image content.
-    """
-    caption = caption.strip().lower()
-    
-    # Simple prompt with easy words
-    prompt = f"Once upon a time, there was {caption}."
-    
-    try:
-        # Generate story with kid-friendly settings
-        result = story_pipeline(
-            prompt,
-            max_new_tokens=80,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            repetition_penalty=1.1,
-            pad_token_id=50256
-        )
-        
-        # Extract generated text
-        full_text = result[0]["generated_text"]
-        
-        # Remove the prompt
-        story = full_text.replace(prompt, "").strip()
-        
-        # Clean up any weird characters
-        story = re.sub(r'[^\w\s\.\,\!\?]', '', story)
-        
-        # Make sure story is not too long
-        words = story.split()
-        if len(words) > 70:
-            story = ' '.join(words[:67]) + '.'
-        
-        # If story is too short, add a simple ending
-        if len(words) < 25:
-            story = story + f" The {caption} was happy. Everyone had fun. The end."
-        
-        # Make sure first letter is capital
-        if story and len(story) > 0:
-            story = story[0].upper() + story[1:]
-        
-        # Add period at end if needed
-        if story and story[-1] not in ['.', '!', '?']:
-            story += '.'
-        
-        return story
-        
-    except Exception as e:
-        st.error(f"Error generating story: {e}")
-        return create_simple_fallback(caption)
-
-
-def create_simple_fallback(caption):
-    """
-    Simple fallback stories with easy words for kids
+    Extract key elements from caption to understand the scene
     """
     caption_lower = caption.lower()
     
-    # Detect what's in the picture
-    if 'dog' in caption_lower or 'puppy' in caption_lower:
-        return f"This is a picture of {caption}. The dog is cute and happy. It likes to play and run. What a nice dog to see in this photo!"
+    # Define keyword categories
+    keywords = {
+        'eating': ['eating', 'dinner', 'lunch', 'food', 'meal', 'restaurant', 'table', 'plate', 'fork', 'knife'],
+        'playing': ['playing', 'game', 'toy', 'ball', 'run', 'jump', 'playground', 'park'],
+        'animal': ['dog', 'cat', 'bird', 'rabbit', 'horse', 'cow', 'pig', 'duck', 'elephant', 'lion', 'tiger', 'bear', 'monkey'],
+        'outdoor': ['park', 'beach', 'forest', 'garden', 'outside', 'sun', 'grass', 'tree', 'flower', 'nature'],
+        'indoor': ['inside', 'room', 'house', 'home', 'building', 'office', 'school', 'classroom'],
+        'celebration': ['birthday', 'party', 'cake', 'candle', 'gift', 'present', 'balloon', 'celebration'],
+        'family': ['family', 'parent', 'mother', 'father', 'mom', 'dad', 'sister', 'brother'],
+        'friends': ['friend', 'friends', 'group', 'people', 'together'],
+        'sleeping': ['sleep', 'sleeping', 'bed', 'nap', 'rest'],
+        'reading': ['read', 'reading', 'book', 'story'],
+        'walking': ['walk', 'walking', 'stroll', 'street', 'road']
+    }
     
-    elif 'cat' in caption_lower or 'kitten' in caption_lower:
-        return f"I see {caption}. The cat is soft and pretty. It likes to nap in the sun. This cat looks very friendly and nice!"
+    matched = []
+    for category, words in keywords.items():
+        for word in words:
+            if word in caption_lower:
+                matched.append(category)
+                break
     
-    elif 'boy' in caption_lower or 'girl' in caption_lower or 'child' in caption_lower:
-        return f"Look at this photo of {caption}. The child is having fun and smiling. Playing outside is the best thing to do on a sunny day!"
+    # Remove duplicates
+    matched = list(set(matched))
     
-    elif 'flower' in caption_lower or 'tree' in caption_lower:
-        return f"Here is {caption}. The flowers and trees look so pretty. Nature is full of beautiful colors. This picture makes me feel happy!"
+    return matched
+
+
+def create_story_from_caption(caption, keywords):
+    """
+    Create a natural, first-person story based on the image content
+    """
+    caption_lower = caption.lower()
     
-    elif 'car' in caption_lower or 'truck' in caption_lower or 'bike' in caption_lower:
-        return f"This photo shows {caption}. The vehicle is red and shiny. It looks fast and cool. I like looking at this picture!"
+    # === EATING / DINING / RESTAURANT stories ===
+    if 'eating' in keywords or 'dinner' in caption_lower or 'lunch' in caption_lower or 'food' in caption_lower or 'table' in caption_lower:
+        stories = [
+            f"Today I went to eat with my family and friends. {caption}. We ordered yummy food like pizza and noodles. Everyone was smiling and talking. We shared so many funny stories. What a great night together!",
+            f"Look at this picture! {caption}. The food looks so delicious. I had a burger and my friend had salad. We laughed and ate until our tummies were full. I love eating with people I care about.",
+            f"This is a happy memory. {caption}. The restaurant was warm and cozy. We celebrated my friend's birthday with cake and candles. Being together with good food makes everything better!",
+            f"I see {caption}. We were all hungry so we went to eat. The table was full of tasty dishes. We talked about our day and planned fun things for tomorrow. Eating together is the best!"
+        ]
+        return random.choice(stories)
     
-    elif 'food' in caption_lower or 'cake' in caption_lower or 'pizza' in caption_lower:
-        return f"Yum! This picture is about {caption}. The food looks so tasty. Eating good food with friends is always fun!"
+    # === BIRTHDAY / PARTY / CELEBRATION stories ===
+    if 'celebration' in keywords or 'birthday' in caption_lower or 'cake' in caption_lower:
+        stories = [
+            f"Wow, it's a party! {caption}. We sang the birthday song and blew out the candles. Everyone clapped and cheered. I got a big piece of chocolate cake. This was the best birthday ever!",
+            f"This picture shows {caption}. Balloons were floating everywhere. We played games and danced to fun music. My friends gave me nice presents. I felt so loved and happy!",
+            f"I see {caption}. We were celebrating something special. There was a big cake with colorful icing. We took lots of photos and made happy memories. What a wonderful day!"
+        ]
+        return random.choice(stories)
     
-    else:
-        return f"This is a nice picture of {caption}. The colors are bright and pretty. I like this photo. It makes me smile!"
+    # === PLAYING / OUTDOOR / PARK stories ===
+    if 'playing' in keywords or 'outdoor' in keywords:
+        stories = [
+            f"I see {caption}. The sun was shining and the air was fresh. We ran and played games on the soft green grass. I made new friends and we laughed a lot. Playing outside is so much fun!",
+            f"Look at this picture! {caption}. We went to the park after school. Some kids were on the swings, some were playing ball. I love days when I can play outside with everyone.",
+            f"This is a picture of {caption}. We were having a race to see who was fastest. The wind felt good on my face. Even when we got tired, we kept smiling. What a great day to play!"
+        ]
+        return random.choice(stories)
+    
+    # === ANIMAL / PET stories ===
+    if 'animal' in keywords:
+        if 'dog' in caption_lower:
+            stories = [
+                f"I see a cute dog in this picture! {caption}. The dog was wagging its tail and wanted to play. I gave the dog a treat and it licked my hand. Dogs are our best friends!",
+                f"Look at this furry friend! {caption}. The dog ran around the yard and chased a butterfly. Then it came back and sat next to me. Having a pet makes every day happier!"
+            ]
+        elif 'cat' in caption_lower:
+            stories = [
+                f"I see a soft cat in this picture! {caption}. The cat was taking a nap in a warm spot. Then it woke up and stretched its little paws. Cats are so cute and fluffy!",
+                f"Look at this pretty cat! {caption}. The cat watched birds from the window. Then it came to me for some petting. I love spending time with this sweet cat!"
+            ]
+        else:
+            stories = [
+                f"I see an animal in this picture! {caption}. The animal looked so cute and friendly. I watched it play and run around. Animals make the world a happier place!",
+                f"This picture shows {caption}. The animal was eating some food and looking around. I think it was happy and safe. I'm glad I got to see this lovely animal today!"
+            ]
+        return random.choice(stories)
+    
+    # === FAMILY / FRIENDS / GROUP stories ===
+    if 'family' in keywords or 'friends' in keywords:
+        stories = [
+            f"This picture shows {caption}. We were all together, smiling and laughing. My mom made delicious food and my dad told funny jokes. Being with family is the best feeling in the world!",
+            f"I see {caption}. My friends and I spent the whole afternoon together. We played, we ate snacks, and we shared secrets. True friends make life so much better. I love them so much!",
+            f"Look at this happy picture! {caption}. Everyone was having a good time. We took this photo to remember the fun day. I will keep this memory in my heart forever!"
+        ]
+        return random.choice(stories)
+    
+    # === SLEEPING / REST stories ===
+    if 'sleeping' in keywords:
+        stories = [
+            f"I see {caption}. After a long day of playing, it was time to rest. I closed my eyes and felt so peaceful. Sleeping helps us grow big and strong. Good night, everyone!",
+            f"This picture shows {caption}. The room was quiet and dark. I snuggled under my warm blanket and fell asleep. Sweet dreams come to those who rest well!"
+        ]
+        return random.choice(stories)
+    
+    # === READING / BOOK stories ===
+    if 'reading' in keywords:
+        stories = [
+            f"I see {caption}. I picked up my favorite book and started reading. The story was about a brave little mouse. Reading takes you to magical places without leaving your chair!",
+            f"This picture shows {caption}. Books are full of adventure and fun. Every page teaches us something new. I love to read every single day!"
+        ]
+        return random.choice(stories)
+    
+    # === WALKING / STREET stories ===
+    if 'walking' in keywords:
+        stories = [
+            f"I see {caption}. The sun was warm and the breeze was soft. I walked down the street and looked at all the pretty houses. A walk outside always makes me feel happy and calm.",
+            f"This picture shows {caption}. I put on my shoes and went for a walk. I saw flowers, trees, and friendly people. Walking is good exercise and it's fun too!"
+        ]
+        return random.choice(stories)
+    
+    # === DEFAULT / GENERAL stories (for any other picture) ===
+    default_stories = [
+        f"I look at this picture and I see {caption}. It makes me feel happy inside. Every picture tells a little story. This one is about joy and beauty. I'm glad I got to see it today!",
+        f"This is a nice picture. {caption}. The colors are so pretty. I like looking at things that make me smile. Thank you for sharing this lovely photo with me!",
+        f"I see {caption}. Sometimes the simple things are the most beautiful. A picture can capture a special moment. I will remember this happy scene for a long time."
+    ]
+    return random.choice(default_stories)
 
 
 def text2audio(story_text):
@@ -136,7 +175,7 @@ def text2audio(story_text):
         temp_audio_path = temp_audio.name
         temp_audio.close()
         
-        # Use slower speed for kids to understand better
+        # Slow speed for kids to understand better
         tts = gTTS(text=story_text, lang="en", slow=True)
         tts.save(temp_audio_path)
         
@@ -193,8 +232,8 @@ def main():
     
     # App title
     st.markdown('<div class="story-title">📖 Kids Storyteller 📖</div>', unsafe_allow_html=True)
-    st.markdown("### Turn any picture into a story for kids!")
-    st.markdown("🎈 For ages 3-10 | 🎨 Easy words | 🔊 Listen and read")
+    st.markdown("### Turn any picture into a happy story!")
+    st.markdown("🎈 For kids aged 3-10 | 📖 Easy to read | 🔊 Listen along")
     
     # Sidebar
     with st.sidebar:
@@ -202,23 +241,23 @@ def main():
         st.markdown("""
         1. **Upload a picture** (JPG or PNG)
         2. **Click 'Make a Story'**
-        3. **Read the story** (easy words!)
-        4. **Listen to the story**
-        5. **Download the audio**
+        3. **Read the story** about your picture
+        4. **Listen to the audio**
+        5. **Download** to keep it!
         """)
         st.divider()
-        st.markdown("**📸 Good pictures to try:**")
+        st.markdown("**📸 Try these pictures:**")
+        st.markdown("- 🍕 People eating together")
+        st.markdown("- 🎂 Birthday party with cake")
         st.markdown("- 🐕 A dog or cat")
-        st.markdown("- 👧 A child smiling")
-        st.markdown("- 🌸 Flowers or trees")
-        st.markdown("- 🚗 A car or bike")
-        st.markdown("- 🍰 Cake or food")
+        st.markdown("- 👨‍👩‍👧 Family or friends")
+        st.markdown("- 🌳 Park or playground")
     
     # File uploader
     uploaded_image = st.file_uploader(
         "🎨 **Upload a picture**", 
         type=["jpg", "jpeg", "png"],
-        help="Pick any picture!"
+        help="Pick any picture and I'll tell a story about it!"
     )
     
     # Display uploaded image
@@ -240,10 +279,12 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Step 2: Write a story
+            # Step 2: Extract keywords
+            keywords = extract_keywords(caption)
+            
+            # Step 3: Create story based on keywords
             with st.spinner("✏️ Writing a story for you..."):
-                story_pipeline = load_story_model()
-                story = generate_kid_story(caption, story_pipeline)
+                story = create_story_from_caption(caption, keywords)
             
             # Show the story
             st.markdown("---")
@@ -260,12 +301,12 @@ def main():
             st.caption(f"📖 {word_count} words")
             st.markdown("---")
             
-            # Step 3: Make audio
+            # Step 4: Make audio
             with st.spinner("🔊 Making audio..."):
                 audio_path = text2audio(story)
             
             if audio_path:
-                st.subheader("🎧 Listen")
+                st.subheader("🎧 Listen to the story")
                 
                 with open(audio_path, "rb") as audio_file:
                     audio_bytes = audio_file.read()
@@ -288,23 +329,20 @@ def main():
     else:
         st.info("👆 **Upload a picture to start!**")
         
-        with st.expander("📷 How it works", expanded=False):
+        with st.expander("📷 Example", expanded=False):
             st.markdown("""
-            1. Take or pick a picture
-            2. The computer looks at your picture
-            3. The computer writes a simple story
-            4. You can read and listen!
+            **If you upload a picture of people eating together:**
             
-            **Example:** A picture of a dog 🐕
+            > *"Today I went to eat with my family and friends. We ordered yummy food like pizza and noodles. Everyone was smiling and talking. We shared so many funny stories. What a great night together!"*
             
-            *"This is a picture of a dog. The dog is cute and happy. It likes to play and run. What a nice dog to see in this photo!"*
+            The AI looks at your picture and tells a story that matches what it sees!
             """)
     
     # Footer
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #95A5A6; font-size: 13px;'>"
-        "Made with ❤️ for kids | Easy words | Fun stories"
+        "Made with ❤️ for kids | Stories that match your pictures"
         "</div>",
         unsafe_allow_html=True
     )
