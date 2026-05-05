@@ -2,18 +2,16 @@
 Storytelling Application for Kids (Age 3-10)
 Using Hugging Face Transformers Pipelines
 - Image Captioning: Salesforce/blip-image-captioning-base
-- Story Generation: Dynamically creates story based on actual image content
-- Text-to-Speech: gTTS (Google Text-to-Speech)
+- Story Generation: pranavpsv/genre-story-generator-v2 (from class demo)
+- Text-to-Speech: Matthijs/mms-tts-eng (from class demo)
 """
 
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
-from gtts import gTTS
 import tempfile
 import os
-import re
-import random
+import numpy as np
 
 # ============================================
 # Helper Functions
@@ -23,6 +21,18 @@ import random
 def load_captioning_model():
     """Load the image captioning model (cached for performance)"""
     return pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
+
+
+@st.cache_resource
+def load_story_generator():
+    """Load the story generation model from class demo"""
+    return pipeline("text-generation", model="pranavpsv/genre-story-generator-v2")
+
+
+@st.cache_resource
+def load_audio_generator():
+    """Load the text-to-audio model from class demo"""
+    return pipeline("text-to-audio", model="Matthijs/mms-tts-eng")
 
 
 def img2text(image, captioning_pipeline):
@@ -36,238 +46,68 @@ def img2text(image, captioning_pipeline):
         return caption
     except Exception as e:
         st.error(f"Error generating caption: {e}")
-        return "a happy scene"
+        return "a happy scene with children playing"
 
 
-def create_kid_friendly_story(caption):
+def caption_to_story(caption, story_generator):
     """
-    Create a story that truly describes what's in the picture
-    Each story is built dynamically based on the actual caption content
+    Convert image caption to a full story using the story generation model
+    Uses the same model from the class demo: pranavpsv/genre-story-generator-v2
     """
-    original_caption = caption
-    caption = caption.lower().strip()
+    # Create a kid-friendly prompt
+    prompt = f"Write a short and happy story for young kids about {caption}. The story should be fun, positive, and full of joy:"
     
-    # Remove common prefixes that BLIP adds
-    caption = re.sub(r'^a photo of |^an image of |^a picture of |^a man |^a woman ', '', caption)
-    
-    # Split into words for analysis
-    words = caption.split()
-    
-    # === Identify what's in the picture ===
-    
-    # Detect main subject (what is the picture about?)
-    subjects = []
-    animals = {'dog': '🐕', 'cat': '🐱', 'bird': '🐦', 'rabbit': '🐰', 'horse': '🐴', 
-               'cow': '🐮', 'pig': '🐷', 'duck': '🦆', 'elephant': '🐘', 'lion': '🦁',
-               'tiger': '🐯', 'bear': '🐻', 'monkey': '🐵', 'fish': '🐟', 'butterfly': '🦋',
-               'bee': '🐝', 'puppy': '🐕', 'kitten': '🐱', 'bunny': '🐰'}
-    
-    people = {'boy': '👦', 'girl': '👧', 'child': '🧒', 'children': '👧👦', 
-              'kid': '🧒', 'kids': '🧒🧒', 'man': '👨', 'woman': '👩', 
-              'person': '🧑', 'people': '👥', 'friend': '🤝', 'family': '👨‍👩‍👧‍👦'}
-    
-    actions = {'playing': 'playing', 'running': 'running', 'jumping': 'jumping', 
-               'sitting': 'sitting', 'standing': 'standing', 'eating': 'eating',
-               'drinking': 'drinking', 'sleeping': 'sleeping', 'walking': 'walking',
-               'smiling': 'smiling', 'laughing': 'laughing', 'reading': 'reading',
-               'drawing': 'drawing', 'singing': 'singing', 'dancing': 'dancing',
-               'swimming': 'swimming', 'flying': 'flying', 'barking': 'barking'}
-    
-    places = {'park': 'park 🌳', 'beach': 'beach 🏖️', 'forest': 'forest 🌲', 
-              'garden': 'garden 🌸', 'zoo': 'zoo 🦒', 'school': 'school 🏫',
-              'home': 'home 🏠', 'house': 'house 🏡', 'store': 'store 🛒',
-              'restaurant': 'restaurant 🍽️', 'kitchen': 'kitchen 🍳', 
-              'bedroom': 'bedroom 🛏️', 'playground': 'playground 🎠', 'grass': 'grass 🌿',
-              'water': 'water 💧', 'pool': 'pool 🏊'}
-    
-    objects = {'ball': 'ball ⚽', 'toy': 'toy 🧸', 'book': 'book 📚', 
-               'table': 'table 🪑', 'chair': 'chair 💺', 'car': 'car 🚗',
-               'bike': 'bike 🚲', 'tree': 'tree 🌳', 'flower': 'flower 🌸',
-               'sun': 'sun ☀️', 'cloud': 'cloud ☁️', 'rainbow': 'rainbow 🌈',
-               'cake': 'cake 🎂', 'present': 'present 🎁', 'gift': 'gift 🎁',
-               'balloon': 'balloon 🎈', 'ice cream': 'ice cream 🍦', 'pizza': 'pizza 🍕'}
-    
-    # Find main subject
-    main_subject = None
-    subject_emoji = ""
-    subject_type = None
-    
-    for word in words:
-        if word in animals:
-            main_subject = word
-            subject_emoji = animals[word]
-            subject_type = 'animal'
-            break
-        elif word in people:
-            main_subject = word
-            subject_emoji = people[word]
-            subject_type = 'person'
-            break
-    
-    # Find action
-    main_action = None
-    for word in words:
-        if word in actions:
-            main_action = actions[word]
-            break
-    
-    # Find place
-    main_place = None
-    place_display = None
-    for word in words:
-        if word in places:
-            main_place = word
-            place_display = places[word]
-            break
-    
-    # Find object
-    main_object = None
-    object_display = None
-    for word in words:
-        if word in objects:
-            main_object = word
-            object_display = objects[word]
-            break
-    
-    # Count how many subjects (plural detection)
-    is_plural = 'children' in caption or 'kids' in caption or 'people' in caption or 'dogs' in caption or 'cats' in caption
-    
-    # If no specific subject found, use the whole caption
-    if not main_subject:
-        main_subject = caption[:30] if len(caption) > 30 else caption
-        subject_type = 'scene'
-    
-    # === Build the story dynamically ===
-    
-    story_parts = []
-    
-    # Opening sentence - describe what we see
-    if subject_type == 'person':
-        if is_plural:
-            story_parts.append(f"Wow! Look at this picture. I see {main_subject}s {main_action if main_action else 'having fun'} {subject_emoji}")
-        else:
-            story_parts.append(f"Wow! Look at this picture. I see a {main_subject} {main_action if main_action else 'playing'} {subject_emoji}")
-    elif subject_type == 'animal':
-        story_parts.append(f"Aww! Look at this cute picture. I see a {main_subject} {main_action if main_action else 'being happy'} {subject_emoji}")
-    else:
-        story_parts.append(f"Wow! Look at this beautiful picture. I see {original_caption}")
-    
-    # Second sentence - describe the place or objects
-    if main_place and place_display:
-        story_parts.append(f"Look where they are - in a {place_display} 🏞️")
-    elif main_object and object_display:
-        story_parts.append(f"I also see a {object_display} in this picture")
-    else:
-        # Describe the scene more
-        if 'outside' in caption or 'outdoor' in caption:
-            story_parts.append(f"Everything looks so bright and sunny outside ☀️")
-        elif 'inside' in caption or 'indoor' in caption:
-            story_parts.append(f"This is happening inside a cozy place 🏠")
-        elif 'color' in caption or 'colorful' in caption:
-            story_parts.append(f"The colors in this picture are so pretty and bright! 🎨")
-    
-    # Third sentence - describe what's happening
-    if main_action:
-        if main_action == 'playing':
-            story_parts.append(f"{main_subject.capitalize()} is playing and having so much fun! It looks like a great time 🎉")
-        elif main_action == 'smiling':
-            story_parts.append(f"Everyone is smiling - that makes me happy too! 😊")
-        elif main_action == 'eating':
-            story_parts.append(f"Yum! {main_subject.capitalize()} is enjoying some delicious food 🍽️")
-        elif main_action == 'running':
-            story_parts.append(f"{main_subject.capitalize()} is running so fast! What a great energy ⚡")
-        elif main_action == 'sleeping':
-            story_parts.append(f"Aww, {main_subject.capitalize()} looks so peaceful and cozy 😴")
-        elif main_action == 'reading':
-            story_parts.append(f"Reading is fun! {main_subject.capitalize()} is learning new things 📖")
-        else:
-            story_parts.append(f"{main_subject.capitalize()} is {main_action} and seems very happy about it 🌟")
-    else:
-        story_parts.append(f"This is such a wonderful moment to look at 🌟")
-    
-    # Fourth sentence - add a fun observation
-    if main_subject:
-        if subject_type == 'animal':
-            fun_phrases = [
-                f"I wonder what the {main_subject} is thinking right now 🤔",
-                f"The {main_subject} looks so soft and cuddly 🫶",
-                f"This {main_subject} reminds me to be happy every day 💛"
-            ]
-        else:
-            fun_phrases = [
-                f"I wonder what fun things will happen next 🎈",
-                f"This makes me want to go out and play too! 🏃",
-                f"Moments like this are the best memories ✨"
-            ]
-        story_parts.append(random.choice(fun_phrases))
-    else:
-        story_parts.append(f"This picture makes my heart feel warm and happy 💛")
-    
-    # Fifth sentence - unique ending based on picture
-    if subject_type == 'person':
-        endings = [
-            f"I hope the {main_subject}s in this picture have the best day ever! Goodbye for now 👋",
-            f"What a lovely picture of {main_subject}s. May every day be as happy as this one! 🌈",
-            f"Thank you for sharing this beautiful moment with me. Have a wonderful day! 🦋"
-        ]
-    elif subject_type == 'animal':
-        endings = [
-            f"I hope this sweet {main_subject} gets lots of hugs and treats today! Bye bye 🐾",
-            f"What a good {main_subject}! Animals make our world so much brighter. Stay happy! 🫶",
-            f"Thank you for showing me this cute {main_subject}. Sending love to your furry friend! 💕"
-        ]
-    elif main_place:
-        endings = [
-            f"What a beautiful day at the {main_place}. I hope you get to visit places like this too! 🗺️",
-            f"I love seeing pretty places like this. Thanks for sharing this adventure with me! 🌍"
-        ]
-    else:
-        endings = [
-            f"This picture is so nice. Thank you for showing me! Keep smiling every day 😊",
-            f"Every picture tells a story, and this one tells a happy story. Bye for now! 🌟"
-        ]
-    
-    story_parts.append(random.choice(endings))
-    
-    # Join all parts
-    story = " ".join(story_parts)
-    
-    # Clean up any double spaces or issues
-    story = re.sub(r'\s+', ' ', story).strip()
-    
-    # Ensure first letter is capital
-    story = story[0].upper() + story[1:] if len(story) > 1 else story
-    
-    # Ensure word count is between 50-100
-    words_count = len(story.split())
-    if words_count > 100:
-        # Trim to about 95 words and add ending
-        story_words = story.split()[:95]
-        story = " ".join(story_words) + " The end!"
-    elif words_count < 50:
-        # Add a sweet sentence if too short
-        story = story + " Every picture has a story, and this one is full of happiness and love. The end! 💝"
-    
-    return story
+    try:
+        # Generate story using the model
+        result = story_generator(
+            prompt,
+            max_length=150,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+            num_return_sequences=1
+        )
+        
+        # Extract the generated story
+        full_story = result[0]["generated_text"]
+        
+        # Remove the prompt from the beginning if present
+        story = full_story.replace(prompt, "").strip()
+        
+        # If story is too long, trim to about 100 words
+        words = story.split()
+        if len(words) > 100:
+            story = " ".join(words[:97]) + "... The end!"
+        
+        # If story is too short, add a nice ending
+        if len(words) < 40:
+            story = story + " This happy picture reminds us to always smile and be kind to one another. The end!"
+        
+        return story
+        
+    except Exception as e:
+        st.error(f"Error generating story: {e}")
+        # Fallback story
+        return f"Once upon a time, there was {caption}. They played and laughed all day long. Everyone was happy and kind. The end!"
 
 
-def text2audio(story_text):
+def text2audio_generator(story_text, audio_pipeline):
     """
-    Convert story text to audio using gTTS
+    Convert story text to audio using the MMS TTS model from class demo
     """
     try:
-        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        temp_audio_path = temp_audio.name
-        temp_audio.close()
+        # Generate audio using the pipeline
+        speech_output = audio_pipeline(story_text)
         
-        # Use slow=True for better clarity for kids
-        tts = gTTS(text=story_text, lang="en", slow=True)
-        tts.save(temp_audio_path)
+        # Extract audio array and sample rate
+        audio_array = speech_output["audio"]
+        sample_rate = speech_output["sampling_rate"]
         
-        return temp_audio_path
+        return audio_array, sample_rate
+        
     except Exception as e:
         st.error(f"Error converting text to audio: {e}")
-        return None
+        return None, None
 
 
 # ============================================
@@ -366,7 +206,7 @@ def main():
         # Generate Story Button
         if st.button("✨ Generate Story ✨", type="primary", use_container_width=True):
             
-            # Step 1: Load model and generate caption
+            # Step 1: Load models and generate caption
             with st.spinner("🖼️ Looking at your picture..."):
                 captioning_pipeline = load_captioning_model()
                 caption = img2text(image, captioning_pipeline)
@@ -378,9 +218,10 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Step 2: Create story from caption
+            # Step 2: Generate story from caption using the story generator model
             with st.spinner("✍️ Writing a magical story for you..."):
-                story = create_kid_friendly_story(caption)
+                story_generator = load_story_generator()
+                story = caption_to_story(caption, story_generator)
             
             # Display the story
             st.markdown("---")
@@ -402,33 +243,23 @@ def main():
             
             st.markdown("---")
             
-            # Step 3: Text to Audio
+            # Step 3: Convert story to audio using MMS TTS model
             with st.spinner("🔊 Converting story to audio..."):
-                audio_path = text2audio(story)
+                audio_generator = load_audio_generator()
+                audio_array, sample_rate = text2audio_generator(story, audio_generator)
             
-            if audio_path:
+            if audio_array is not None:
                 st.subheader("🎧 Listen to the Story")
                 
                 col1, col2 = st.columns([2, 1])
                 with col1:
-                    with open(audio_path, "rb") as audio_file:
-                        audio_bytes = audio_file.read()
-                    st.audio(audio_bytes, format="audio/mp3")
+                    # Play audio using Streamlit's audio component
+                    st.audio(audio_array, sample_rate=sample_rate)
                 
-                with col2:
-                    st.download_button(
-                        label="📥 Download Audio",
-                        data=audio_bytes,
-                        file_name="my_story.mp3",
-                        mime="audio/mpeg",
-                        use_container_width=True
-                    )
+                # Note: For MMS TTS output, we can't easily save as downloadable file
+                # because it returns a numpy array, not a file path
+                st.info("💡 Audio is playing above! Click the play button to listen.")
                 
-                # Clean up temp file
-                try:
-                    os.unlink(audio_path)
-                except:
-                    pass
             else:
                 st.warning("⚠️ Audio generation failed. You can still read the story above!")
     
