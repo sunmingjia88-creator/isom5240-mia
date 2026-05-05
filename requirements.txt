@@ -1,6 +1,5 @@
 streamlit
 transformers<5.0.0
 torch
-torchaudio
 Pillow
-scipy
+gTTS
