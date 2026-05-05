@@ -197,35 +197,49 @@ def main():
         layout="centered"
     )
     
-    # Custom CSS for better readability
+    # Custom CSS for better readability - FIXED: explicit text colors
     st.markdown("""
         <style>
+        /* Force dark text on light background for story box */
         .story-box {
-            background-color: #FFF8DC;
-            padding: 25px;
-            border-radius: 20px;
-            border-left: 8px solid #FF6B6B;
-            border-right: 8px solid #4ECDC4;
-            font-size: 20px;
-            line-height: 1.8;
-            font-family: 'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', cursive;
-            color: #2C3E50;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            background-color: #FFF8DC !important;
+            padding: 25px !important;
+            border-radius: 20px !important;
+            border-left: 8px solid #FF6B6B !important;
+            border-right: 8px solid #4ECDC4 !important;
+            font-size: 20px !important;
+            line-height: 1.8 !important;
+            font-family: 'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', cursive !important;
+            color: #1A1A2E !important;
+            text-shadow: none !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
+        }
+        /* Ensure all text inside story-box is dark */
+        .story-box * {
+            color: #1A1A2E !important;
         }
         .story-title {
             text-align: center;
             font-size: 32px;
             font-weight: bold;
-            color: #FF6B6B;
+            color: #FF6B6B !important;
             margin-bottom: 20px;
         }
         .caption-box {
-            background-color: #E8F8F5;
-            padding: 12px;
-            border-radius: 15px;
-            font-style: italic;
-            font-size: 16px;
-            margin: 10px 0;
+            background-color: #E8F8F5 !important;
+            padding: 12px !important;
+            border-radius: 15px !important;
+            font-style: italic !important;
+            font-size: 16px !important;
+            margin: 10px 0 !important;
+            color: #2C3E50 !important;
+        }
+        .caption-box * {
+            color: #2C3E50 !important;
+        }
+        /* Fix for any white text issues */
+        .stMarkdown, .stMarkdown p {
+            color: inherit !important;
         }
         </style>
     """, unsafe_allow_html=True)
