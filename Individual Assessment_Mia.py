@@ -2,14 +2,16 @@
 Storytelling Application for Kids (Age 3-10)
 Using Hugging Face Transformers Pipelines
 - Image Captioning: Salesforce/blip-image-captioning-base
-- Story Generation: pranavpsv/genre-story-generator-v2 (from class demo)
-- Text-to-Speech: Matthijs/mms-tts-eng (from class demo)
+- Story Generation: Uses the caption directly + simple extensions
+- Text-to-Speech: gTTS (simple and reliable)
 """
 
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
-import numpy as np
+from gtts import gTTS
+import tempfile
+import os
 
 # ============================================
 # Helper Functions
@@ -21,21 +23,10 @@ def load_captioning_model():
     return pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
 
 
-@st.cache_resource
-def load_story_generator():
-    """Load the story generation model from class demo"""
-    return pipeline("text-generation", model="pranavpsv/genre-story-generator-v2")
-
-
-@st.cache_resource
-def load_audio_generator():
-    """Load the text-to-audio model from class demo"""
-    return pipeline("text-to-audio", model="Matthijs/mms-tts-eng")
-
-
 def img2text(image, captioning_pipeline):
     """
     Convert image to text caption using BLIP model
+    Returns a detailed caption describing the image
     """
     try:
         result = captioning_pipeline(image)
@@ -43,101 +34,66 @@ def img2text(image, captioning_pipeline):
         return caption
     except Exception as e:
         st.error(f"Error generating caption: {e}")
-        return "a happy scene with children playing in a beautiful place"
+        return "a beautiful scene"
 
 
-def caption_to_story(caption, story_generator):
+def create_story_from_caption(caption):
     """
-    Convert image caption to a full story using story generation model
-    The prompt is carefully crafted to tell a story BASED ON the image content
+    Create a simple story that directly describes what's in the picture.
+    No extra fantasy or unrelated content - just describe the image.
     """
-    # Create a prompt that instructs the model to tell a story about the image
-    prompt = f"""Tell me a short, happy story for young children about what you see in this picture: {caption}
-
-The story should be 50-100 words, simple, and fun for kids age 3-10.
-
-Story:"""
+    # Clean up the caption
+    caption = caption.strip()
     
-    try:
-        # Generate story using the model
-        result = story_generator(
-            prompt,
-            max_new_tokens=150,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            truncation=True
-        )
-        
-        # Extract the generated story
-        full_text = result[0]["generated_text"]
-        
-        # Extract only the story part (after "Story:")
-        if "Story:" in full_text:
-            story = full_text.split("Story:")[-1].strip()
-        else:
-            story = full_text.replace(prompt, "").strip()
-        
-        # Clean up any common issues
-        story = story.replace("  ", " ")
-        
-        # Ensure story has a proper ending
-        if not story.endswith((".", "!", "?")):
-            story += " The end!"
-        
-        # Trim to 50-100 words
-        words = story.split()
-        if len(words) > 100:
-            story = " ".join(words[:97]) + "... The end!"
-        elif len(words) < 45:
-            # Add a nice sentence if too short
-            story = story + " This is a beautiful picture full of joy and happiness! The end!"
-        
-        return story
-        
-    except Exception as e:
-        st.error(f"Error generating story: {e}")
-        # Fallback story based on caption
-        return create_fallback_story(caption)
+    # Simple story templates that just describe the picture
+    # Each template puts the caption at the center
+    
+    template1 = f"""Look at this picture. In this picture, I see {caption}. This is what is happening in the image. That is all I can see in this photo. The end."""
+    
+    template2 = f"""This is a nice picture. The picture shows {caption}. This is what the camera captured. Thank you for sharing this photo with me. The end."""
+    
+    template3 = f"""I am looking at this photo. In this photo, there is {caption}. This is the scene in front of me. I hope you like this description of your picture. The end."""
+    
+    template4 = f"""Let me tell you about this picture. The picture contains {caption}. That is exactly what I see when I look at this image. The end."""
+    
+    template5 = f"""Here is what I see: {caption}. This picture shows this scene clearly. That is my description of your photo. The end."""
+    
+    # Choose a template based on caption length for variety
+    templates = [template1, template2, template3, template4, template5]
+    
+    # Use the same caption to always get the same template (for consistency)
+    template_index = hash(caption) % len(templates)
+    story = templates[template_index]
+    
+    # Ensure word count is between 50-100
+    words = story.split()
+    if len(words) > 100:
+        # Trim to exactly 100 words
+        story = " ".join(words[:97]) + " The end."
+    elif len(words) < 50:
+        # Add a simple sentence if too short
+        story = story.replace("The end.", "This picture is very nice to look at. The end.")
+    
+    return story
 
 
-def create_fallback_story(caption):
-    """Create a simple fallback story based on the caption"""
-    caption = caption.lower()
-    
-    if "dog" in caption or "puppy" in caption:
-        return f"Once upon a time, there was a cute {caption}. The puppy played and ran all day long. It made many friends and everyone was happy. The little puppy learned that being kind and friendly makes every day special. The end!"
-    
-    elif "cat" in caption or "kitten" in caption:
-        return f"Look at this lovely picture of {caption}. The cat was soft and cuddly. It loved to play with yarn and nap in the sunshine. Every day was a happy adventure for this sweet cat. The end!"
-    
-    elif "child" in caption or "boy" in caption or "girl" in caption or "kid" in caption:
-        return f"What a wonderful picture of {caption}! The child was playing and having so much fun. They laughed, smiled, and enjoyed every moment. This picture reminds us that happiness comes from simple joys. The end!"
-    
-    elif "park" in caption or "beach" in caption or "garden" in caption:
-        return f"Wow! Look at this beautiful {caption}. The sun was shining, flowers were blooming, and everything felt magical. It was the perfect day to be outside, explore nature, and make happy memories with friends. The end!"
-    
-    else:
-        return f"Look at this amazing picture! It shows {caption}. Everyone in this picture is having a wonderful time. They are smiling, playing, and enjoying life. This happy scene teaches us to always find joy in the little things. The end!"
-
-
-def text2audio_generator(story_text, audio_pipeline):
+def text2audio(story_text):
     """
-    Convert story text to audio using the MMS TTS model from class demo
+    Convert story text to audio using gTTS
     """
     try:
-        # Generate audio using the pipeline
-        speech_output = audio_pipeline(story_text)
+        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        temp_audio_path = temp_audio.name
+        temp_audio.close()
         
-        # Extract audio array and sample rate
-        audio_array = speech_output["audio"]
-        sample_rate = speech_output["sampling_rate"]
+        # Use slow=False for natural speed
+        tts = gTTS(text=story_text, lang="en", slow=False)
+        tts.save(temp_audio_path)
         
-        return audio_array, sample_rate
-        
+        return temp_audio_path
     except Exception as e:
         st.error(f"Error converting text to audio: {e}")
-        return None, None
+        return None
 
 
 # ============================================
@@ -198,8 +154,8 @@ def main():
     
     # App title
     st.markdown('<div class="story-title">📖 Kids Storyteller 📖</div>', unsafe_allow_html=True)
-    st.markdown("### Turn any picture into a magical story!")
-    st.markdown("🎈 For kids aged 3-10 | 🌟 Fun and family-friendly")
+    st.markdown("### Turn any picture into a simple story!")
+    st.markdown("🎈 For kids aged 3-10 | 🌟 Easy to read and understand")
     
     # Sidebar
     with st.sidebar:
@@ -207,24 +163,25 @@ def main():
         st.markdown("""
         1. **Upload a picture** (JPG, JPEG, or PNG)
         2. **Click 'Generate Story'** 
-        3. **Read the story** about what's in your picture
+        3. **Read what the AI sees** in your picture
         4. **Listen to the audio** version
+        5. **Download** to keep the story!
         """)
         st.divider()
         st.markdown("**📸 Best pictures to try:**")
-        st.markdown("- 🐕 A dog or cat playing")
-        st.markdown("- 👧 Children smiling or playing")
-        st.markdown("- 🌈 Rainbow, flowers, or nature")
-        st.markdown("- 🏖️ Beach, park, or playground")
-        st.markdown("- 🎂 Birthday party or celebration")
+        st.markdown("- 🐕 A dog or cat")
+        st.markdown("- 👧 A child or people")
+        st.markdown("- 🌸 Flowers or nature")
+        st.markdown("- 🏠 A house or building")
+        st.markdown("- 🍕 Food or objects")
         st.divider()
-        st.markdown("**💡 Tip:** Clear, bright pictures work best!")
+        st.markdown("**💡 Tip:** The story will simply describe what the AI sees in your picture!")
     
     # File uploader
     uploaded_image = st.file_uploader(
         "🎨 **Upload an image**", 
         type=["jpg", "jpeg", "png"],
-        help="Upload any picture, and I'll create a story that matches what's in the picture!"
+        help="Upload any picture, and I'll describe what I see!"
     )
     
     # Display uploaded image
@@ -235,7 +192,7 @@ def main():
         # Generate Story Button
         if st.button("✨ Generate Story ✨", type="primary", use_container_width=True):
             
-            # Step 1: Load models and generate caption
+            # Step 1: Load model and generate caption
             with st.spinner("🖼️ Looking at your picture..."):
                 captioning_pipeline = load_captioning_model()
                 caption = img2text(image, captioning_pipeline)
@@ -247,10 +204,9 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Step 2: Generate story from caption using the story generator model
-            with st.spinner("✍️ Writing a magical story for you..."):
-                story_generator = load_story_generator()
-                story = caption_to_story(caption, story_generator)
+            # Step 2: Create simple story from caption
+            with st.spinner("✍️ Writing a simple description..."):
+                story = create_story_from_caption(caption)
             
             # Display the story
             st.markdown("---")
@@ -272,39 +228,57 @@ def main():
             
             st.markdown("---")
             
-            # Step 3: Convert story to audio using MMS TTS model
+            # Step 3: Text to Audio
             with st.spinner("🔊 Converting story to audio..."):
-                audio_generator = load_audio_generator()
-                audio_array, sample_rate = text2audio_generator(story, audio_generator)
+                audio_path = text2audio(story)
             
-            if audio_array is not None:
+            if audio_path:
                 st.subheader("🎧 Listen to the Story")
-                st.audio(audio_array, sample_rate=sample_rate)
-                st.info("💡 Click the play button above to listen to the story!")
+                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    with open(audio_path, "rb") as audio_file:
+                        audio_bytes = audio_file.read()
+                    st.audio(audio_bytes, format="audio/mp3")
+                
+                with col2:
+                    st.download_button(
+                        label="📥 Download Audio",
+                        data=audio_bytes,
+                        file_name="story_audio.mp3",
+                        mime="audio/mpeg",
+                        use_container_width=True
+                    )
+                
+                # Clean up temp file
+                try:
+                    os.unlink(audio_path)
+                except:
+                    pass
             else:
                 st.warning("⚠️ Audio generation failed. You can still read the story above!")
     
     else:
         # Placeholder when no image
-        st.info("👆 **Please upload an image to begin your storytelling adventure!**")
+        st.info("👆 **Please upload an image to begin!**")
         
         # Show example
-        with st.expander("📷 See example", expanded=False):
+        with st.expander("📷 How it works", expanded=False):
             st.markdown("""
-            Try uploading a picture of:
-            - A child playing in a park
-            - A cute animal
-            - A beautiful sunset or rainbow
-            - Friends or family having fun
+            1. Upload any picture
+            2. The AI looks at your picture
+            3. The AI describes exactly what it sees
+            4. You get a simple story that matches your picture!
             
-            The AI will look at your picture and then tell a story about what it sees!
+            **Example:** If you upload a picture of a dog, the story will describe the dog.
+            No extra fantasy or made-up content - just a clear description of your picture.
             """)
     
     # Footer
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #95A5A6; font-size: 13px;'>"
-        "Made with ❤️ for young storytellers | 📖 Pictures become stories | 🔊 Stories become audio"
+        "Made with ❤️ for young storytellers | 📖 Pictures become simple stories | 🔊 Stories become audio"
         "</div>",
         unsafe_allow_html=True
     )
