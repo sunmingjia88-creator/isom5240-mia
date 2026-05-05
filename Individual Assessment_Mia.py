@@ -1,8 +1,8 @@
 """
 Storytelling Application for Kids (Age 3-10)
 Using Hugging Face Transformers Pipelines
-- Image Captioning: Salesforce/blip-image-captioning-base (generates detailed caption)
-- Story Generation: Using a template-based approach with caption insertion (avoids hallucination)
+- Image Captioning: Salesforce/blip-image-captioning-base
+- Story Generation: Describes what's actually in the picture using simple, kid-friendly language
 - Text-to-Speech: gTTS (Google Text-to-Speech)
 """
 
@@ -12,7 +12,7 @@ from transformers import pipeline
 from gtts import gTTS
 import tempfile
 import os
-import random
+import re
 
 # ============================================
 # Helper Functions
@@ -35,135 +35,144 @@ def img2text(image, captioning_pipeline):
         return caption
     except Exception as e:
         st.error(f"Error generating caption: {e}")
-        return "a happy scene with children playing"
+        return "a happy scene"
+
+
+def extract_key_elements(caption):
+    """
+    Extract key nouns and elements from caption to use in the story
+    """
+    # Common words to remove
+    stop_words = {'a', 'an', 'the', 'and', 'of', 'with', 'is', 'are', 'in', 'on', 'at', 'to', 'for', 'has', 'have'}
+    
+    words = caption.lower().split()
+    key_words = [w for w in words if w not in stop_words and len(w) > 2]
+    
+    # Try to identify what's in the picture
+    elements = []
+    
+    # People/animals
+    people_indicators = ['child', 'children', 'kid', 'kids', 'boy', 'girl', 'person', 'people', 'man', 'woman', 'friend', 'family']
+    animal_indicators = ['dog', 'cat', 'bird', 'rabbit', 'horse', 'cow', 'pig', 'duck', 'chicken', 'elephant', 'lion', 'tiger', 'bear', 'monkey', 'fish', 'butterfly', 'bee']
+    
+    for word in words:
+        if word in people_indicators:
+            elements.append(('people', word))
+        elif word in animal_indicators:
+            elements.append(('animal', word))
+    
+    # Actions
+    action_indicators = ['playing', 'running', 'jumping', 'sitting', 'standing', 'eating', 'drinking', 'sleeping', 'walking', 'smiling', 'laughing', 'crying', 'reading', 'drawing', 'singing', 'dancing', 'swimming']
+    
+    for word in words:
+        if word in action_indicators:
+            elements.append(('action', word))
+    
+    # Objects/Things
+    object_indicators = ['ball', 'toy', 'book', 'table', 'chair', 'car', 'bike', 'house', 'tree', 'flower', 'grass', 'water', 'sun', 'cloud', 'rainbow', 'cake', 'birthday', 'present', 'gift']
+    
+    for word in words:
+        if word in object_indicators:
+            elements.append(('object', word))
+    
+    # Places
+    place_indicators = ['park', 'beach', 'forest', 'garden', 'zoo', 'school', 'home', 'house', 'store', 'restaurant', 'kitchen', 'bedroom', 'playground']
+    
+    for word in words:
+        if word in place_indicators:
+            elements.append(('place', word))
+    
+    return elements, key_words
 
 
 def create_story_from_caption(caption):
     """
-    Create a coherent, engaging story based on the image caption.
-    Uses structured story templates that incorporate the actual image content.
-    This avoids hallucination and ensures the story matches the picture.
+    Create a kid-friendly story that ACTUALLY describes what's in the picture
     """
-    
-    # Clean up the caption
     caption = caption.lower().strip()
+    elements, key_words = extract_key_elements(caption)
     
-    # Define story templates for different types of scenes
-    # Each template uses the actual caption to ensure relevance
+    # Determine what's in the picture
+    has_people = any(e[0] == 'people' for e in elements)
+    has_animal = any(e[0] == 'animal' for e in elements)
+    has_action = any(e[0] == 'action' for e in elements)
+    has_place = any(e[0] == 'place' for e in elements)
+    has_object = any(e[0] == 'object' for e in elements)
     
-    # Template Set 1: Adventure style
-    templates_adventure = [
-        f"""Once upon a time, there was {caption}. 
-
-Every day was a new adventure! The sun was shining brightly as our friend explored the wonderful world around them. They met new friends, discovered beautiful flowers, and laughed with joy. 
-
-What made this day so special was all the happiness that filled the air. Our friend learned that every moment is precious when you share it with others. 
-
-And so, this beautiful {caption} reminds us to always find joy in simple things. The end!""",
-
-        f"""In a magical land not so far away, there was {caption}. 
-
-The day began with a warm, golden sun rising in the sky. Our little hero felt excited and curious about everything around. They played, they smiled, and they made wonderful memories. 
-
-This {caption} taught everyone that being brave and kind makes the world a better place. Every day brings new chances to be happy and spread love.
-
-And they all lived happily, enjoying {caption}. The end!"""
-    ]
+    # Extract specific items for better description
+    people_word = next((e[1] for e in elements if e[0] == 'people'), 'someone')
+    animal_word = next((e[1] for e in elements if e[0] == 'animal'), None)
+    action_word = next((e[1] for e in elements if e[0] == 'action'), 'being happy')
+    place_word = next((e[1] for e in elements if e[0] == 'place'), None)
+    object_word = next((e[1] for e in elements if e[0] == 'object'), None)
     
-    # Template Set 2: Friendship style
-    templates_friendship = [
-        f"""Look at this wonderful picture! It shows {caption}. 
-
-This reminds us of how special friendship and happiness can be. Everyone in this {caption} is having such a good time together. They are learning, growing, and sharing beautiful moments. 
-
-The most important thing is to always be kind to one another. When we share our happiness, everyone feels warm and loved. 
-
-Let's remember this happy {caption} whenever we need a smile. The end!""",
-
-        f"""What a beautiful scene! Here we can see {caption}. 
-
-This picture tells a story of joy and wonder. Every little detail shows how amazing our world can be. The colors, the smiles, and the magic of {caption} make our hearts feel full of happiness. 
-
-Remember: every day is special, just like this {caption}. Always look for the good things around you, because happiness is everywhere if you know where to look.
-
-The end!"""
-    ]
+    # Start building the story
+    story = ""
     
-    # Template Set 3: Simple and sweet (for younger kids)
-    templates_simple = [
-        f"""I see {caption}. 
-
-This is such a nice picture! Everything about {caption} makes me feel happy and warm inside. 
-
-When I look at this picture, I think about all the wonderful things in the world. The sun, the smiles, and the love that surrounds us every single day. 
-
-Let's always remember this happy {caption} and carry its joy in our hearts. 
-
-The end!""",
-
-        f"""Wow! Look at this amazing picture of {caption}. 
-
-Isn't it beautiful? This picture shows us how wonderful life can be when we take time to enjoy the little things. 
-
-Whether it's playing, laughing, or just being together, moments like {caption} are what make life special. 
-
-So let's celebrate this beautiful {caption} and all the happiness it brings. 
-
-The end!"""
-    ]
+    # Opening sentence - describe what we see
+    if has_people:
+        if people_word == 'child' or people_word == 'kid':
+            story += f"Look at this happy picture! I see a little {people_word} {action_word}. "
+        elif people_word == 'children' or people_word == 'kids':
+            story += f"Look at this happy picture! I see {people_word} {action_word}. "
+        else:
+            story += f"Look at this wonderful picture! I see {people_word} {action_word}. "
+    elif has_animal:
+        story += f"Look at this cute picture! I see a {animal_word} {action_word}. "
+    else:
+        story += f"Look at this nice picture! I see {caption}. "
     
-    # Combine all templates
-    all_templates = templates_adventure + templates_friendship + templates_simple
+    # Second sentence - describe the place or objects
+    if has_place:
+        story += f"This is happening in a {place_word}. "
+    elif has_object:
+        story += f"I can also see a {object_word} nearby. "
     
-    # Randomly select a template (but same seed for same caption to keep consistency)
-    # Using hash of caption to select template consistently
-    template_index = hash(caption) % len(all_templates)
-    story = all_templates[template_index]
+    # Third sentence - add some fun details
+    if has_people and has_action:
+        if action_word in ['playing', 'running', 'jumping']:
+            story += f"The {people_word} looks so happy and full of energy! "
+        elif action_word in ['eating', 'drinking']:
+            story += f"The {people_word} is enjoying a tasty treat! "
+        elif action_word in ['reading', 'drawing']:
+            story += f"The {people_word} is learning something new and having fun! "
+        else:
+            story += f"This makes everyone feel warm and happy inside! "
+    elif has_animal:
+        story += f"The {animal_word} is so cute and friendly! "
     
-    # Post-process to ensure the story flows well
-    story = story.replace("  ", " ")
+    # Fourth sentence - add a simple lesson or feeling
+    if has_people:
+        story += f"We can learn that playing and smiling with others is the best thing to do. "
+    elif has_animal:
+        story += f"We can learn to be kind to animals and love nature. "
+    else:
+        story += f"We can learn to enjoy the beautiful things around us every day. "
+    
+    # Fifth sentence - positive ending
+    if has_people:
+        story += f"I hope the {people_word} has a wonderful day full of joy and laughter! The end!"
+    elif has_animal:
+        story += f"I hope this sweet {animal_word} stays happy and healthy forever! The end!"
+    else:
+        story += f"I hope you enjoyed this beautiful picture and story! The end!"
+    
+    # Clean up any "a a" or duplicate issues
+    story = re.sub(r'\ba\s+a\b', 'a', story)
+    story = re.sub(r'\ban\s+an\b', 'an', story)
     
     # Ensure word count is between 50-100
     words = story.split()
     if len(words) > 100:
         story = " ".join(words[:97]) + "... The end!"
     elif len(words) < 50:
-        # Add a sentence if too short
-        story = story + " This happy picture reminds us to always smile and be grateful for every moment we share with others. The end!"
+        # Add a simple sentence if too short
+        if has_people:
+            story = story.replace("The end!", "Every day is special when we share it with friends! The end!")
+        else:
+            story = story.replace("The end!", "Let's always be happy and kind to everyone we meet! The end!")
     
     return story
-
-
-def create_detailed_story(caption, image):
-    """
-    Create an even more detailed story by extracting more information from the image
-    This is a fallback/enhanced version
-    """
-    
-    # Basic story using the caption
-    base_story = create_story_from_caption(caption)
-    
-    # Add some variation based on image dimensions/colors (simple enhancement)
-    try:
-        width, height = image.size
-        if width > height:
-            orientation = "wide and beautiful"
-        else:
-            orientation = "tall and wonderful"
-        
-        # Enhance the story with orientation detail
-        enhancement = f" This {orientation} scene captures a perfect moment."
-        
-        # Insert enhancement at a natural point
-        sentences = base_story.split('. ')
-        if len(sentences) > 2:
-            sentences.insert(2, enhancement)
-            enhanced_story = '. '.join(sentences)
-            return enhanced_story
-    except:
-        pass
-    
-    return base_story
 
 
 def text2audio(story_text):
@@ -197,10 +206,9 @@ def main():
         layout="centered"
     )
     
-    # Custom CSS for better readability - FIXED: explicit text colors
+    # Custom CSS for better readability
     st.markdown("""
         <style>
-        /* Force dark text on light background for story box */
         .story-box {
             background-color: #FFF8DC !important;
             padding: 25px !important;
@@ -214,7 +222,6 @@ def main():
             text-shadow: none !important;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
         }
-        /* Ensure all text inside story-box is dark */
         .story-box * {
             color: #1A1A2E !important;
         }
@@ -237,7 +244,6 @@ def main():
         .caption-box * {
             color: #2C3E50 !important;
         }
-        /* Fix for any white text issues */
         .stMarkdown, .stMarkdown p {
             color: inherit !important;
         }
@@ -255,7 +261,7 @@ def main():
         st.markdown("""
         1. **Upload a picture** (JPG, JPEG, or PNG)
         2. **Click 'Generate Story'** 
-        3. **Read the story** that matches your picture
+        3. **Read the story** about what's in your picture
         4. **Listen to the audio** version
         5. **Download** to keep the story!
         """)
@@ -298,13 +304,13 @@ def main():
             
             # Step 2: Create story from caption
             with st.spinner("✍️ Writing a story based on your picture..."):
-                story = create_detailed_story(caption, image)
+                story = create_story_from_caption(caption)
             
             # Display the story
             st.markdown("---")
             st.markdown('<div class="story-title">✨ The Story ✨</div>', unsafe_allow_html=True)
             
-            # Story in a nice box with larger, readable font
+            # Story in a nice box
             st.markdown(f"""
             <div class="story-box">
             {story}
