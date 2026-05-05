@@ -2,8 +2,8 @@
 Storytelling Application for Kids (Age 3-10)
 Using Hugging Face Transformers Pipelines
 - Image Captioning: Salesforce/blip-image-captioning-base
-- Story Generation: Uses the caption directly + simple extensions
-- Text-to-Speech: gTTS (simple and reliable)
+- Story Generation: Rich description based on caption (no hallucination)
+- Text-to-Speech: gTTS (Google Text-to-Speech)
 """
 
 import streamlit as st
@@ -12,6 +12,7 @@ from transformers import pipeline
 from gtts import gTTS
 import tempfile
 import os
+import re
 
 # ============================================
 # Helper Functions
@@ -34,45 +35,177 @@ def img2text(image, captioning_pipeline):
         return caption
     except Exception as e:
         st.error(f"Error generating caption: {e}")
-        return "a beautiful scene"
+        return "a happy scene with beautiful things"
 
 
-def create_story_from_caption(caption):
+def create_rich_story_from_caption(caption):
     """
-    Create a simple story that directly describes what's in the picture.
-    No extra fantasy or unrelated content - just describe the image.
+    Create a rich, descriptive story based on the image caption.
+    Stays true to the image content - no made-up stories or fantasy.
+    Just describes what is in the picture in a more engaging way.
     """
-    # Clean up the caption
-    caption = caption.strip()
+    original_caption = caption
+    caption_lower = caption.lower().strip()
     
-    # Simple story templates that just describe the picture
-    # Each template puts the caption at the center
+    # Remove common prefixes
+    caption_clean = re.sub(r'^a photo of |^an image of |^a picture of |^a |an ', '', caption_lower)
     
-    template1 = f"""Look at this picture. In this picture, I see {caption}. This is what is happening in the image. That is all I can see in this photo. The end."""
+    # Split into words for analysis
+    words = caption_lower.split()
     
-    template2 = f"""This is a nice picture. The picture shows {caption}. This is what the camera captured. Thank you for sharing this photo with me. The end."""
+    # === Identify key elements in the picture ===
     
-    template3 = f"""I am looking at this photo. In this photo, there is {caption}. This is the scene in front of me. I hope you like this description of your picture. The end."""
+    # Find the main subject (what is this picture about?)
+    animals = ['dog', 'puppy', 'cat', 'kitten', 'bird', 'rabbit', 'horse', 'cow', 'pig', 
+               'duck', 'elephant', 'lion', 'tiger', 'bear', 'monkey', 'fish', 'butterfly']
     
-    template4 = f"""Let me tell you about this picture. The picture contains {caption}. That is exactly what I see when I look at this image. The end."""
+    people = ['boy', 'girl', 'child', 'children', 'kid', 'kids', 'man', 'woman', 
+              'person', 'people', 'baby', 'friend', 'family', 'mother', 'father', 'parent']
     
-    template5 = f"""Here is what I see: {caption}. This picture shows this scene clearly. That is my description of your photo. The end."""
+    actions = ['playing', 'running', 'jumping', 'sitting', 'standing', 'eating', 'drinking',
+               'sleeping', 'walking', 'smiling', 'laughing', 'reading', 'drawing', 'singing',
+               'dancing', 'swimming', 'flying', 'barking', 'looking']
     
-    # Choose a template based on caption length for variety
-    templates = [template1, template2, template3, template4, template5]
+    places = ['park', 'beach', 'forest', 'garden', 'zoo', 'school', 'home', 'house',
+              'store', 'restaurant', 'kitchen', 'bedroom', 'playground', 'grass', 'water',
+              'pool', 'street', 'road', 'field', 'farm']
     
-    # Use the same caption to always get the same template (for consistency)
-    template_index = hash(caption) % len(templates)
-    story = templates[template_index]
+    objects = ['ball', 'toy', 'book', 'table', 'chair', 'car', 'bike', 'tree', 'flower',
+               'sun', 'cloud', 'sky', 'rainbow', 'cake', 'present', 'gift', 'balloon',
+               'ice cream', 'pizza', 'food', 'plate', 'cup', 'phone', 'computer']
+    
+    # Find subject
+    subject = None
+    subject_type = None
+    for word in words:
+        if word in animals:
+            subject = word
+            subject_type = 'animal'
+            break
+        elif word in people:
+            subject = word
+            subject_type = 'person'
+            break
+    
+    # If no specific subject found, use the main noun from caption
+    if not subject:
+        # Try to get the first noun
+        for word in words:
+            if len(word) > 2 and word not in ['the', 'and', 'with', 'this', 'that']:
+                subject = word
+                subject_type = 'thing'
+                break
+    
+    # Find action
+    action = None
+    for word in words:
+        if word in actions:
+            action = word
+            break
+    
+    # Find place
+    place = None
+    for word in words:
+        if word in places:
+            place = word
+            break
+    
+    # Find objects
+    found_objects = []
+    for word in words:
+        if word in objects and word != subject:
+            found_objects.append(word)
+    
+    # === Build a rich, descriptive story ===
+    
+    story_parts = []
+    
+    # Part 1: Opening - What we see
+    if subject:
+        if subject_type == 'animal':
+            story_parts.append(f"Look at this beautiful picture. In this picture, I can see a {subject}.")
+        elif subject_type == 'person':
+            if subject in ['child', 'kid', 'boy', 'girl']:
+                story_parts.append(f"Look at this lovely picture. In this picture, I can see a little {subject}.")
+            else:
+                story_parts.append(f"Look at this nice picture. In this picture, I can see a {subject}.")
+        else:
+            story_parts.append(f"Look at this wonderful picture. In this picture, I can see {subject}.")
+    else:
+        story_parts.append(f"Look at this picture. In this picture, I can see {original_caption}.")
+    
+    # Part 2: Describe what is happening (action)
+    if action:
+        story_parts.append(f"The {subject if subject else 'scene'} is {action} right now in this photo.")
+    else:
+        if subject:
+            story_parts.append(f"The {subject} is staying still and looking nice in this picture.")
+    
+    # Part 3: Describe the location (place)
+    if place:
+        story_parts.append(f"This is happening in or near a {place}. The {place} looks like a nice place to be.")
+    else:
+        if 'outside' in caption_lower or 'outdoor' in caption_lower:
+            story_parts.append(f"This picture was taken outside. The outdoors looks bright and natural.")
+        elif 'inside' in caption_lower or 'indoor' in caption_lower:
+            story_parts.append(f"This picture was taken inside a building or room. It looks cozy and comfortable.")
+        else:
+            story_parts.append(f"The background of this picture is also very interesting to look at.")
+    
+    # Part 4: Describe any objects in the picture
+    if found_objects:
+        if len(found_objects) == 1:
+            story_parts.append(f"I can also see a {found_objects[0]} in this picture.")
+        elif len(found_objects) >= 2:
+            objects_list = ", ".join(found_objects[:-1]) + f" and {found_objects[-1]}"
+            story_parts.append(f"I can also see {objects_list} in this picture.")
+    else:
+        if subject_type == 'animal':
+            story_parts.append(f"The {subject} is the main thing I notice when I look at this picture.")
+        elif subject_type == 'person':
+            story_parts.append(f"The {subject} is doing something interesting in this photo.")
+    
+    # Part 5: Describe colors if mentioned in caption
+    colors = ['red', 'blue', 'green', 'yellow', 'purple', 'pink', 'brown', 'black', 'white', 'orange']
+    found_colors = [c for c in colors if c in caption_lower]
+    if found_colors:
+        story_parts.append(f"I see {', '.join(found_colors)} colors in this picture. The colors make this photo look very nice.")
+    
+    # Part 6: Positive observation
+    if subject_type == 'animal':
+        story_parts.append(f"This {subject} looks very cute and friendly. I like looking at this animal picture.")
+    elif subject_type == 'person':
+        if action in ['smiling', 'laughing', 'playing']:
+            story_parts.append(f"The {subject} looks very happy and full of joy in this picture. That makes me feel happy too.")
+        else:
+            story_parts.append(f"This is a nice picture of a person. It is always good to see people having a good time.")
+    else:
+        story_parts.append(f"This is a very nice picture to look at. Every picture tells us something about the world around us.")
+    
+    # Part 7: Closing
+    story_parts.append(f"Thank you for sharing this picture with me. That is what I see when I look at this photo of {original_caption}.")
+    story_parts.append("The end.")
+    
+    # Join all parts
+    story = " ".join(story_parts)
+    
+    # Clean up
+    story = story.replace("  ", " ")
+    story = story.replace("the the", "the")
+    story = story.replace("a a", "a")
     
     # Ensure word count is between 50-100
-    words = story.split()
-    if len(words) > 100:
-        # Trim to exactly 100 words
-        story = " ".join(words[:97]) + " The end."
-    elif len(words) < 50:
-        # Add a simple sentence if too short
-        story = story.replace("The end.", "This picture is very nice to look at. The end.")
+    words_count = len(story.split())
+    if words_count > 100:
+        # Trim to about 100 words
+        story_words = story.split()[:97]
+        story = " ".join(story_words) + " The end."
+    elif words_count < 50:
+        # Add a few more descriptive sentences
+        story = story.replace("The end.", f" This picture shows {original_caption} clearly. I hope you enjoyed this description of your photo. The end.")
+    
+    # Capitalize first letter
+    story = story[0].upper() + story[1:]
     
     return story
 
@@ -154,8 +287,8 @@ def main():
     
     # App title
     st.markdown('<div class="story-title">📖 Kids Storyteller 📖</div>', unsafe_allow_html=True)
-    st.markdown("### Turn any picture into a simple story!")
-    st.markdown("🎈 For kids aged 3-10 | 🌟 Easy to read and understand")
+    st.markdown("### Turn any picture into a rich story!")
+    st.markdown("🎈 For kids aged 3-10 | 🌟 Clear descriptions about your picture")
     
     # Sidebar
     with st.sidebar:
@@ -163,25 +296,28 @@ def main():
         st.markdown("""
         1. **Upload a picture** (JPG, JPEG, or PNG)
         2. **Click 'Generate Story'** 
-        3. **Read what the AI sees** in your picture
+        3. **Read the rich description** of what's in your picture
         4. **Listen to the audio** version
         5. **Download** to keep the story!
         """)
         st.divider()
         st.markdown("**📸 Best pictures to try:**")
         st.markdown("- 🐕 A dog or cat")
-        st.markdown("- 👧 A child or people")
-        st.markdown("- 🌸 Flowers or nature")
-        st.markdown("- 🏠 A house or building")
-        st.markdown("- 🍕 Food or objects")
+        st.markdown("- 👧 Children or people")
+        st.markdown("- 🌸 Flowers, trees, nature")
+        st.markdown("- 🏠 Houses, buildings, places")
+        st.markdown("- 🍕 Food, toys, objects")
         st.divider()
-        st.markdown("**💡 Tip:** The story will simply describe what the AI sees in your picture!")
+        st.markdown("**💡 How it works:**")
+        st.markdown("- The AI looks at your picture")
+        st.markdown("- It describes what it sees")
+        st.markdown("- The story stays true to your picture")
     
     # File uploader
     uploaded_image = st.file_uploader(
         "🎨 **Upload an image**", 
         type=["jpg", "jpeg", "png"],
-        help="Upload any picture, and I'll describe what I see!"
+        help="Upload any picture, and I'll create a rich description of what I see!"
     )
     
     # Display uploaded image
@@ -204,9 +340,9 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Step 2: Create simple story from caption
-            with st.spinner("✍️ Writing a simple description..."):
-                story = create_story_from_caption(caption)
+            # Step 2: Create rich story from caption
+            with st.spinner("✍️ Writing a rich description of your picture..."):
+                story = create_rich_story_from_caption(caption)
             
             # Display the story
             st.markdown("---")
@@ -263,22 +399,25 @@ def main():
         st.info("👆 **Please upload an image to begin!**")
         
         # Show example
-        with st.expander("📷 How it works", expanded=False):
+        with st.expander("📷 See an example", expanded=False):
             st.markdown("""
-            1. Upload any picture
-            2. The AI looks at your picture
-            3. The AI describes exactly what it sees
-            4. You get a simple story that matches your picture!
+            **Example:** If you upload a picture of a dog sitting on grass
             
-            **Example:** If you upload a picture of a dog, the story will describe the dog.
-            No extra fantasy or made-up content - just a clear description of your picture.
+            **The story will describe:**
+            - What animal is in the picture (a dog)
+            - What the dog is doing (sitting)
+            - Where the dog is (on grass)
+            - What colors are in the picture
+            - A positive, happy message about the picture
+            
+            No made-up stories - just a clear, rich description of YOUR picture!
             """)
     
     # Footer
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #95A5A6; font-size: 13px;'>"
-        "Made with ❤️ for young storytellers | 📖 Pictures become simple stories | 🔊 Stories become audio"
+        "Made with ❤️ for young storytellers | 📖 Pictures become rich descriptions | 🔊 Stories become audio"
         "</div>",
         unsafe_allow_html=True
     )
