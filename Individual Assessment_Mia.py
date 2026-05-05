@@ -2,7 +2,7 @@
 Storytelling Application for Kids (Age 3-10)
 Using Hugging Face Transformers Pipelines
 - Image Captioning: Salesforce/blip-image-captioning-base
-- Story Generation: Describes what's actually in the picture using simple, kid-friendly language
+- Story Generation: Dynamically creates story based on actual image content
 - Text-to-Speech: gTTS (Google Text-to-Speech)
 """
 
@@ -13,6 +13,7 @@ from gtts import gTTS
 import tempfile
 import os
 import re
+import random
 
 # ============================================
 # Helper Functions
@@ -38,139 +39,214 @@ def img2text(image, captioning_pipeline):
         return "a happy scene"
 
 
-def extract_key_elements(caption):
+def create_kid_friendly_story(caption):
     """
-    Extract key nouns and elements from caption to use in the story
+    Create a story that truly describes what's in the picture
+    Each story is built dynamically based on the actual caption content
     """
-    # Common words to remove
-    stop_words = {'a', 'an', 'the', 'and', 'of', 'with', 'is', 'are', 'in', 'on', 'at', 'to', 'for', 'has', 'have'}
-    
-    words = caption.lower().split()
-    key_words = [w for w in words if w not in stop_words and len(w) > 2]
-    
-    # Try to identify what's in the picture
-    elements = []
-    
-    # People/animals
-    people_indicators = ['child', 'children', 'kid', 'kids', 'boy', 'girl', 'person', 'people', 'man', 'woman', 'friend', 'family']
-    animal_indicators = ['dog', 'cat', 'bird', 'rabbit', 'horse', 'cow', 'pig', 'duck', 'chicken', 'elephant', 'lion', 'tiger', 'bear', 'monkey', 'fish', 'butterfly', 'bee']
-    
-    for word in words:
-        if word in people_indicators:
-            elements.append(('people', word))
-        elif word in animal_indicators:
-            elements.append(('animal', word))
-    
-    # Actions
-    action_indicators = ['playing', 'running', 'jumping', 'sitting', 'standing', 'eating', 'drinking', 'sleeping', 'walking', 'smiling', 'laughing', 'crying', 'reading', 'drawing', 'singing', 'dancing', 'swimming']
-    
-    for word in words:
-        if word in action_indicators:
-            elements.append(('action', word))
-    
-    # Objects/Things
-    object_indicators = ['ball', 'toy', 'book', 'table', 'chair', 'car', 'bike', 'house', 'tree', 'flower', 'grass', 'water', 'sun', 'cloud', 'rainbow', 'cake', 'birthday', 'present', 'gift']
-    
-    for word in words:
-        if word in object_indicators:
-            elements.append(('object', word))
-    
-    # Places
-    place_indicators = ['park', 'beach', 'forest', 'garden', 'zoo', 'school', 'home', 'house', 'store', 'restaurant', 'kitchen', 'bedroom', 'playground']
-    
-    for word in words:
-        if word in place_indicators:
-            elements.append(('place', word))
-    
-    return elements, key_words
-
-
-def create_story_from_caption(caption):
-    """
-    Create a kid-friendly story that ACTUALLY describes what's in the picture
-    """
+    original_caption = caption
     caption = caption.lower().strip()
-    elements, key_words = extract_key_elements(caption)
     
-    # Determine what's in the picture
-    has_people = any(e[0] == 'people' for e in elements)
-    has_animal = any(e[0] == 'animal' for e in elements)
-    has_action = any(e[0] == 'action' for e in elements)
-    has_place = any(e[0] == 'place' for e in elements)
-    has_object = any(e[0] == 'object' for e in elements)
+    # Remove common prefixes that BLIP adds
+    caption = re.sub(r'^a photo of |^an image of |^a picture of |^a man |^a woman ', '', caption)
     
-    # Extract specific items for better description
-    people_word = next((e[1] for e in elements if e[0] == 'people'), 'someone')
-    animal_word = next((e[1] for e in elements if e[0] == 'animal'), None)
-    action_word = next((e[1] for e in elements if e[0] == 'action'), 'being happy')
-    place_word = next((e[1] for e in elements if e[0] == 'place'), None)
-    object_word = next((e[1] for e in elements if e[0] == 'object'), None)
+    # Split into words for analysis
+    words = caption.split()
     
-    # Start building the story
-    story = ""
+    # === Identify what's in the picture ===
+    
+    # Detect main subject (what is the picture about?)
+    subjects = []
+    animals = {'dog': '🐕', 'cat': '🐱', 'bird': '🐦', 'rabbit': '🐰', 'horse': '🐴', 
+               'cow': '🐮', 'pig': '🐷', 'duck': '🦆', 'elephant': '🐘', 'lion': '🦁',
+               'tiger': '🐯', 'bear': '🐻', 'monkey': '🐵', 'fish': '🐟', 'butterfly': '🦋',
+               'bee': '🐝', 'puppy': '🐕', 'kitten': '🐱', 'bunny': '🐰'}
+    
+    people = {'boy': '👦', 'girl': '👧', 'child': '🧒', 'children': '👧👦', 
+              'kid': '🧒', 'kids': '🧒🧒', 'man': '👨', 'woman': '👩', 
+              'person': '🧑', 'people': '👥', 'friend': '🤝', 'family': '👨‍👩‍👧‍👦'}
+    
+    actions = {'playing': 'playing', 'running': 'running', 'jumping': 'jumping', 
+               'sitting': 'sitting', 'standing': 'standing', 'eating': 'eating',
+               'drinking': 'drinking', 'sleeping': 'sleeping', 'walking': 'walking',
+               'smiling': 'smiling', 'laughing': 'laughing', 'reading': 'reading',
+               'drawing': 'drawing', 'singing': 'singing', 'dancing': 'dancing',
+               'swimming': 'swimming', 'flying': 'flying', 'barking': 'barking'}
+    
+    places = {'park': 'park 🌳', 'beach': 'beach 🏖️', 'forest': 'forest 🌲', 
+              'garden': 'garden 🌸', 'zoo': 'zoo 🦒', 'school': 'school 🏫',
+              'home': 'home 🏠', 'house': 'house 🏡', 'store': 'store 🛒',
+              'restaurant': 'restaurant 🍽️', 'kitchen': 'kitchen 🍳', 
+              'bedroom': 'bedroom 🛏️', 'playground': 'playground 🎠', 'grass': 'grass 🌿',
+              'water': 'water 💧', 'pool': 'pool 🏊'}
+    
+    objects = {'ball': 'ball ⚽', 'toy': 'toy 🧸', 'book': 'book 📚', 
+               'table': 'table 🪑', 'chair': 'chair 💺', 'car': 'car 🚗',
+               'bike': 'bike 🚲', 'tree': 'tree 🌳', 'flower': 'flower 🌸',
+               'sun': 'sun ☀️', 'cloud': 'cloud ☁️', 'rainbow': 'rainbow 🌈',
+               'cake': 'cake 🎂', 'present': 'present 🎁', 'gift': 'gift 🎁',
+               'balloon': 'balloon 🎈', 'ice cream': 'ice cream 🍦', 'pizza': 'pizza 🍕'}
+    
+    # Find main subject
+    main_subject = None
+    subject_emoji = ""
+    subject_type = None
+    
+    for word in words:
+        if word in animals:
+            main_subject = word
+            subject_emoji = animals[word]
+            subject_type = 'animal'
+            break
+        elif word in people:
+            main_subject = word
+            subject_emoji = people[word]
+            subject_type = 'person'
+            break
+    
+    # Find action
+    main_action = None
+    for word in words:
+        if word in actions:
+            main_action = actions[word]
+            break
+    
+    # Find place
+    main_place = None
+    place_display = None
+    for word in words:
+        if word in places:
+            main_place = word
+            place_display = places[word]
+            break
+    
+    # Find object
+    main_object = None
+    object_display = None
+    for word in words:
+        if word in objects:
+            main_object = word
+            object_display = objects[word]
+            break
+    
+    # Count how many subjects (plural detection)
+    is_plural = 'children' in caption or 'kids' in caption or 'people' in caption or 'dogs' in caption or 'cats' in caption
+    
+    # If no specific subject found, use the whole caption
+    if not main_subject:
+        main_subject = caption[:30] if len(caption) > 30 else caption
+        subject_type = 'scene'
+    
+    # === Build the story dynamically ===
+    
+    story_parts = []
     
     # Opening sentence - describe what we see
-    if has_people:
-        if people_word == 'child' or people_word == 'kid':
-            story += f"Look at this happy picture! I see a little {people_word} {action_word}. "
-        elif people_word == 'children' or people_word == 'kids':
-            story += f"Look at this happy picture! I see {people_word} {action_word}. "
+    if subject_type == 'person':
+        if is_plural:
+            story_parts.append(f"Wow! Look at this picture. I see {main_subject}s {main_action if main_action else 'having fun'} {subject_emoji}")
         else:
-            story += f"Look at this wonderful picture! I see {people_word} {action_word}. "
-    elif has_animal:
-        story += f"Look at this cute picture! I see a {animal_word} {action_word}. "
+            story_parts.append(f"Wow! Look at this picture. I see a {main_subject} {main_action if main_action else 'playing'} {subject_emoji}")
+    elif subject_type == 'animal':
+        story_parts.append(f"Aww! Look at this cute picture. I see a {main_subject} {main_action if main_action else 'being happy'} {subject_emoji}")
     else:
-        story += f"Look at this nice picture! I see {caption}. "
+        story_parts.append(f"Wow! Look at this beautiful picture. I see {original_caption}")
     
     # Second sentence - describe the place or objects
-    if has_place:
-        story += f"This is happening in a {place_word}. "
-    elif has_object:
-        story += f"I can also see a {object_word} nearby. "
+    if main_place and place_display:
+        story_parts.append(f"Look where they are - in a {place_display} 🏞️")
+    elif main_object and object_display:
+        story_parts.append(f"I also see a {object_display} in this picture")
+    else:
+        # Describe the scene more
+        if 'outside' in caption or 'outdoor' in caption:
+            story_parts.append(f"Everything looks so bright and sunny outside ☀️")
+        elif 'inside' in caption or 'indoor' in caption:
+            story_parts.append(f"This is happening inside a cozy place 🏠")
+        elif 'color' in caption or 'colorful' in caption:
+            story_parts.append(f"The colors in this picture are so pretty and bright! 🎨")
     
-    # Third sentence - add some fun details
-    if has_people and has_action:
-        if action_word in ['playing', 'running', 'jumping']:
-            story += f"The {people_word} looks so happy and full of energy! "
-        elif action_word in ['eating', 'drinking']:
-            story += f"The {people_word} is enjoying a tasty treat! "
-        elif action_word in ['reading', 'drawing']:
-            story += f"The {people_word} is learning something new and having fun! "
+    # Third sentence - describe what's happening
+    if main_action:
+        if main_action == 'playing':
+            story_parts.append(f"{main_subject.capitalize()} is playing and having so much fun! It looks like a great time 🎉")
+        elif main_action == 'smiling':
+            story_parts.append(f"Everyone is smiling - that makes me happy too! 😊")
+        elif main_action == 'eating':
+            story_parts.append(f"Yum! {main_subject.capitalize()} is enjoying some delicious food 🍽️")
+        elif main_action == 'running':
+            story_parts.append(f"{main_subject.capitalize()} is running so fast! What a great energy ⚡")
+        elif main_action == 'sleeping':
+            story_parts.append(f"Aww, {main_subject.capitalize()} looks so peaceful and cozy 😴")
+        elif main_action == 'reading':
+            story_parts.append(f"Reading is fun! {main_subject.capitalize()} is learning new things 📖")
         else:
-            story += f"This makes everyone feel warm and happy inside! "
-    elif has_animal:
-        story += f"The {animal_word} is so cute and friendly! "
-    
-    # Fourth sentence - add a simple lesson or feeling
-    if has_people:
-        story += f"We can learn that playing and smiling with others is the best thing to do. "
-    elif has_animal:
-        story += f"We can learn to be kind to animals and love nature. "
+            story_parts.append(f"{main_subject.capitalize()} is {main_action} and seems very happy about it 🌟")
     else:
-        story += f"We can learn to enjoy the beautiful things around us every day. "
+        story_parts.append(f"This is such a wonderful moment to look at 🌟")
     
-    # Fifth sentence - positive ending
-    if has_people:
-        story += f"I hope the {people_word} has a wonderful day full of joy and laughter! The end!"
-    elif has_animal:
-        story += f"I hope this sweet {animal_word} stays happy and healthy forever! The end!"
+    # Fourth sentence - add a fun observation
+    if main_subject:
+        if subject_type == 'animal':
+            fun_phrases = [
+                f"I wonder what the {main_subject} is thinking right now 🤔",
+                f"The {main_subject} looks so soft and cuddly 🫶",
+                f"This {main_subject} reminds me to be happy every day 💛"
+            ]
+        else:
+            fun_phrases = [
+                f"I wonder what fun things will happen next 🎈",
+                f"This makes me want to go out and play too! 🏃",
+                f"Moments like this are the best memories ✨"
+            ]
+        story_parts.append(random.choice(fun_phrases))
     else:
-        story += f"I hope you enjoyed this beautiful picture and story! The end!"
+        story_parts.append(f"This picture makes my heart feel warm and happy 💛")
     
-    # Clean up any "a a" or duplicate issues
-    story = re.sub(r'\ba\s+a\b', 'a', story)
-    story = re.sub(r'\ban\s+an\b', 'an', story)
+    # Fifth sentence - unique ending based on picture
+    if subject_type == 'person':
+        endings = [
+            f"I hope the {main_subject}s in this picture have the best day ever! Goodbye for now 👋",
+            f"What a lovely picture of {main_subject}s. May every day be as happy as this one! 🌈",
+            f"Thank you for sharing this beautiful moment with me. Have a wonderful day! 🦋"
+        ]
+    elif subject_type == 'animal':
+        endings = [
+            f"I hope this sweet {main_subject} gets lots of hugs and treats today! Bye bye 🐾",
+            f"What a good {main_subject}! Animals make our world so much brighter. Stay happy! 🫶",
+            f"Thank you for showing me this cute {main_subject}. Sending love to your furry friend! 💕"
+        ]
+    elif main_place:
+        endings = [
+            f"What a beautiful day at the {main_place}. I hope you get to visit places like this too! 🗺️",
+            f"I love seeing pretty places like this. Thanks for sharing this adventure with me! 🌍"
+        ]
+    else:
+        endings = [
+            f"This picture is so nice. Thank you for showing me! Keep smiling every day 😊",
+            f"Every picture tells a story, and this one tells a happy story. Bye for now! 🌟"
+        ]
+    
+    story_parts.append(random.choice(endings))
+    
+    # Join all parts
+    story = " ".join(story_parts)
+    
+    # Clean up any double spaces or issues
+    story = re.sub(r'\s+', ' ', story).strip()
+    
+    # Ensure first letter is capital
+    story = story[0].upper() + story[1:] if len(story) > 1 else story
     
     # Ensure word count is between 50-100
-    words = story.split()
-    if len(words) > 100:
-        story = " ".join(words[:97]) + "... The end!"
-    elif len(words) < 50:
-        # Add a simple sentence if too short
-        if has_people:
-            story = story.replace("The end!", "Every day is special when we share it with friends! The end!")
-        else:
-            story = story.replace("The end!", "Let's always be happy and kind to everyone we meet! The end!")
+    words_count = len(story.split())
+    if words_count > 100:
+        # Trim to about 95 words and add ending
+        story_words = story.split()[:95]
+        story = " ".join(story_words) + " The end!"
+    elif words_count < 50:
+        # Add a sweet sentence if too short
+        story = story + " Every picture has a story, and this one is full of happiness and love. The end! 💝"
     
     return story
 
@@ -303,8 +379,8 @@ def main():
                 """, unsafe_allow_html=True)
             
             # Step 2: Create story from caption
-            with st.spinner("✍️ Writing a story based on your picture..."):
-                story = create_story_from_caption(caption)
+            with st.spinner("✍️ Writing a magical story for you..."):
+                story = create_kid_friendly_story(caption)
             
             # Display the story
             st.markdown("---")
