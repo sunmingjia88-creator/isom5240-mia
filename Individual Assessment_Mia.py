@@ -3,82 +3,96 @@ from transformers import pipeline
 from PIL import Image
 from gtts import gTTS
 import tempfile
+import re
 
 # -----------------------------------
-# Load Models
+# Load Hugging Face Models
 # -----------------------------------
 
-# Image Captioning Model
-image_to_text = pipeline(
+# Image Caption Model
+image_captioner = pipeline(
     "image-to-text",
     model="Salesforce/blip-image-captioning-base"
 )
 
-# Text Generation Model
+# Story Generation Model
 story_generator = pipeline(
     "text-generation",
-    model="gpt2"
+    model="distilgpt2"
 )
 
 # -----------------------------------
-# Function: Image to Text
+# Function: Generate Image Caption
 # -----------------------------------
 def img2text(image):
     """
-    Generate a simple image caption
+    Generate a clean image description
     """
 
-    caption = image_to_text(image)[0]["generated_text"]
+    result = image_captioner(image)
+
+    caption = result[0]["generated_text"]
+
+    # Clean unnecessary words
+    caption = caption.replace("illustration", "")
+    caption = caption.replace("cartoon", "")
+    caption = caption.replace("drawing", "")
+    caption = caption.strip()
 
     return caption
 
 
 # -----------------------------------
-# Function: Text to Story
+# Function: Generate Story
 # -----------------------------------
 def text2story(caption):
     """
-    Generate a short and kid-friendly story
+    Generate a short children's story
     """
 
     prompt = (
-        f"Write a cute, simple, and happy story for children "
-        f"between 3 and 10 years old based on this picture: {caption}. "
-        f"The story should only describe the picture content. "
-        f"Use easy words, fun actions, and cheerful emotions. "
-        f"Keep the story between 50 and 80 words."
+        f"Children story: "
+        f"A happy and cute story about {caption}. "
+        f"The story should use simple words for kids. "
+        f"Keep it short and fun."
     )
 
-    story = story_generator(
+    result = story_generator(
         prompt,
-        max_new_tokens=80,
+        max_new_tokens=60,
+        temperature=0.7,
         do_sample=True,
-        temperature=0.8,
-        top_k=50,
-        top_p=0.95,
-        repetition_penalty=1.2
+        truncation=True
     )
 
-    generated_text = story[0]["generated_text"]
+    generated_text = result[0]["generated_text"]
 
-    # Remove prompt part
-    story_text = generated_text.replace(prompt, "").strip()
+    # Remove prompt from output
+    story = generated_text.replace(prompt, "").strip()
 
-    # Clean unwanted symbols
-    story_text = story_text.replace("\n", " ")
+    # Remove strange symbols
+    story = re.sub(r'[^A-Za-z0-9 ,.?!]', '', story)
 
-    return story_text
+    # Backup story if generation is bad
+    if len(story) < 20:
+        story = (
+            f"One sunny day, {caption} had lots of fun together. "
+            f"They laughed, ran, and played happily in the warm sunshine. "
+            f"Everyone smiled and enjoyed the wonderful day."
+        )
+
+    return story
 
 
 # -----------------------------------
-# Function: Text to Audio
+# Function: Convert Story to Audio
 # -----------------------------------
 def text2audio(story_text):
     """
-    Convert text story into audio
+    Convert story into speech audio
     """
 
-    tts = gTTS(text=story_text, lang='en')
+    tts = gTTS(text=story_text, lang="en")
 
     temp_audio = tempfile.NamedTemporaryFile(
         delete=False,
@@ -97,7 +111,7 @@ def text2audio(story_text):
 st.title("📚 AI Storytelling App for Kids")
 
 st.write(
-    "Upload a picture and enjoy a fun AI-generated story with audio!"
+    "Upload a picture and enjoy a cute AI-generated story!"
 )
 
 # Upload image
@@ -117,19 +131,19 @@ if uploaded_image is not None:
         use_container_width=True
     )
 
-    # Generate button
+    # Generate Story Button
     if st.button("Generate Story"):
 
-        # Generate caption
+        # Step 1: Image Caption
         with st.spinner("Looking at the picture..."):
 
             caption = img2text(image)
 
-        st.subheader("🌟 Picture Description")
+        st.subheader("🎨 Picture Description")
 
         st.write(caption)
 
-        # Generate story
+        # Step 2: Story Generation
         with st.spinner("Creating a fun story..."):
 
             story = text2story(caption)
@@ -138,7 +152,7 @@ if uploaded_image is not None:
 
         st.write(story)
 
-        # Generate audio
+        # Step 3: Audio Generation
         with st.spinner("Making story audio..."):
 
             audio_file = text2audio(story)
@@ -146,3 +160,4 @@ if uploaded_image is not None:
         st.subheader("🔊 Listen to the Story")
 
         st.audio(audio_file)
+   
